@@ -21,6 +21,7 @@
 #include "esp_lcd_panel_vendor.h"
 #endif
 
+#include <aht20.h>
 
 
 
@@ -54,15 +55,26 @@ static const char *TAG = "example";
 #define EXAMPLE_LCD_CMD_BITS           8
 #define EXAMPLE_LCD_PARAM_BITS         8
 
+
+#define I2C_AHT_BUS I2C_NUM_1
+
+
 extern void example_lvgl_demo_ui(lv_disp_t *disp);
 extern void example_lvgl_display_voc(lv_disp_t *disp);
 extern void display_temperature(lv_disp_t *disp, float temperature); 
 extern void lv_example_arc_2(lv_disp_t *disp);
 
+
+
+
 void app_main(void)
 {
+    uint32_t temp_raw, hum_raw;
+    float temp, hum;
+
     ESP_LOGI(TAG, "Initialize I2C bus");
     i2c_master_bus_handle_t i2c_bus = NULL;
+    i2c_master_bus_handle_t aht_bus = NULL;
     i2c_master_bus_config_t bus_config = {
         .clk_source = I2C_CLK_SRC_DEFAULT,
         .glitch_ignore_cnt = 7,
@@ -72,7 +84,21 @@ void app_main(void)
         .flags.enable_internal_pullup = true,
     };
     ESP_ERROR_CHECK(i2c_new_master_bus(&bus_config, &i2c_bus));
+    bus_config.i2c_port = I2C_AHT_BUS;
+    bus_config.sda_io_num = GPIO_NUM_27;
+    bus_config.scl_io_num = GPIO_NUM_26;
 
+    ESP_ERROR_CHECK(i2c_new_master_bus(&bus_config, &aht_bus));
+    aht20_dev_handle_t aht20_handle = NULL;
+    i2c_aht20_config_t aht20_i2c_config = {
+        .i2c_config.device_address = AHT20_ADDRESS_0,
+        .i2c_config.scl_speed_hz = 100000,
+        .i2c_timeout = 100,
+    };
+    aht20_new_sensor(aht_bus, &aht20_i2c_config, &aht20_handle);
+    aht20_read_float(aht20_handle, &temp, &hum);
+    ESP_LOGI(TAG, "Humidity      : %2.2f %%", hum);
+    ESP_LOGI(TAG, "Temperature   : %2.2f degC", temp);
     ESP_LOGI(TAG, "Install panel IO");
     esp_lcd_panel_io_handle_t io_handle = NULL;
     esp_lcd_panel_io_i2c_config_t io_config = {
@@ -144,7 +170,7 @@ void app_main(void)
     // Lock the mutex due to the LVGL APIs are not thread-safe
     if (lvgl_port_lock(0)) {
         //display_temperature(disp, 25.0);
-        lv_example_arc_2(disp);
+        display_temperature(disp, temp);
         // Release the mutex
         lvgl_port_unlock();
     }
